@@ -195,7 +195,7 @@ def GetChain(patient_id):
     return row
 
 
-# Instantiate the Blockchain
+# Initantiate the Blockchain
 blockchain = Blockchain()
 
 # Instantiate the Node
