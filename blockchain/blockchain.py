@@ -18,6 +18,7 @@ from datetime import datetime
 
 
 
+db_path = "./blockchain.db"
 
 class Blockchain:
 
@@ -25,26 +26,43 @@ class Blockchain:
         self.db_path = './blockchain.db'
         self._initialize_database()
 
-    def create_block(self, Patient_id, Authority_id, previous_hash, Validator_sig, Record_change):
+    def _initialize_database(self):
+
+        db = sqlite3.connect(self.db_path)
+        dbfunc = db.cursor()
+
+        dbfunc.execute("CREATE TABLE IF NOT EXISTS Users(id INTEGER PRIMARY KEY AUTOINCREMENT,username TEXT UNIQUE,password TEXT,role TEXT,public_key TEXT,private_key TEXT);")
+
+        dbfunc.execute("CREATE TABLE IF NOT EXISTS TempRecordChanges(id INTEGER PRIMARY KEY AUTOINCREMENT, patient_id INTEGER, doctor_id INTEGER, action TEXT, timestamp TEXT, doctor_signature TEXT, patient_signature TEXT, authority_id INTEGER, authority_signature TEXT, status TEXT);")
+
+        dbfunc.execute("CREATE TABLE IF NOT EXISTS Blocks(id INTEGER PRIMARY KEY AUTOINCREMENT, patient_id INTEGER, doctor_id INTEGER, authority_id INTEGER, timestamp TEXT, record_change TEXT, previous_hash TEXT, validator_signature TEXT, block_hash TEXT);")
+
+        db.commit()
+        db.close()
+
+    def create_block(self, Patient_id, Doctor_id, Authority_id, previous_hash, Validator_sig, Record_change):
 
         block = {
             'timestamp': datetime.now().strftime("%y/%m/%d %H:%M:%S"),
             'Patient_id': Patient_id,
+            'Doctor_id': Doctor_id,
             'Authority_id': Authority_id,
             'previous_hash': previous_hash,
             'Validator_sig': Validator_sig,
-            'Record_change': Record_change
+            'Record_changes': Record_change
         }
 
         block_hash = self.hash(block)
         block['block_hash'] = block_hash
 
         return block
-    def GenerateKeys(self):
+    def GenerateKeys(self, user_id):
 
         key = RSA.generate(2048)
-        private_key = key.export_key()
-        public_key = key.publickey().export_key()
+        private_key = key.export_key().decode()
+        public_key = key.publickey().export_key().decode()
+
+        StoreKeys(user_id, public_key, private_key)
 
         return private_key, public_key
 
@@ -73,7 +91,7 @@ class Blockchain:
         RecordJson = json.dumps(Record, sort_keys=True).encode()
         msgdigest = SHA256.new(RecordJson)
 
-        signature = binascii.unhexlify(sign.decode('utf8'))
+        signature = binascii.unhexlify(sign.encode('utf8'))
 
         return verifier.verify(msgdigest, signature)
 
@@ -86,6 +104,95 @@ class Blockchain:
         h.update(block_string)
         return h.hexdigest()
 
+def CreateUser(username, password, role):
+
+    pass_hash = hashlib.sha256(password.encode()).hexdigest()
+
+    db = sqlite3.connect(db_path)
+
+    dbfunc = db.cursor()
+
+    dbfunc.execute("INSERT INTO Users (username, password, role) VALUES (?, ?, ?)",(username, pass_hash, role))
+    db.commit()
+    db.close()
+
+def Login(username, password):
+
+    pass_hash = hashlib.sha256(password.encode()).hexdigest()
+    db = sqlite3.connect(db_path)
+    dbfunc = db.cursor()
+    dbfunc.execute("SELECT id, role, public_key, private_key FROM Users WHERE username=? AND password=?",(username, pass_hash))
+    row = dbfunc.fetchone()
+    db.close()
+
+    return row
+
+def StoreKeys(user_id,public_key,private_key):
+
+    db = sqlite3.connect(db_path)
+    dbfunc = db.cursor()
+
+    dbfunc.execute("UPDATE Users SET public_key=?, private_key=? WHERE id=?",(public_key, private_key, user_id))
+    db.commit()
+    db.close()
+
+def GetUserKey(user_id):
+    db = sqlite3.connect(db_path)
+    dbfunc = db.cursor()
+
+    dbfunc.execute("SELECT public_key, private_key FROM Users WHERE id=?",(user_id,))
+
+    row = dbfunc.fetchone()
+    db.close()
+
+    return row
+
+def NewRecord(patient_id, doctor_id, action):
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    db = sqlite3.connect(db_path)
+    dbfunc = db.cursor()
+
+    dbfunc.execute("INSERT INTO TempRecordChanges (patient_id, doctor_id, action, timestamp, status) VALUES (?, ?, ?, ?, ?)",(patient_id, doctor_id, action, timestamp, "Pending Approval"))
+
+    db.commit()
+    db.close()
+
+def GetPending(patient_id):
+
+    db = sqlite3.connect(db_path)
+    dbfunc = db.cursor()
+
+    dbfunc.execute("SELECT * FROM TempRecordChanges WHERE patient_id=? AND status = 'Pending Approval'",(patient_id,))
+
+    row = dbfunc.fetchall()
+    db.close()
+
+    return row
+
+
+def UpdateRecord(record_id, field, value):
+
+    db = sqlite3.connect(db_path)
+    dbfunc = db.cursor()
+
+    dbfunc.execute(f"UPDATE TempRecordChanges SET {field}=? WHERE id=?",(value, record_id))
+
+    db.commit()
+    db.close()
+
+
+def GetChain(patient_id):
+
+    db = sqlite3.connect(db_path)
+    dbfunc = db.cursor()
+
+    dbfunc.execute("SELECT * FROM Blocks WHERE patient_id=? ORDER BY id ASC",(patient_id,))
+
+    row = dbfunc.fetchall()
+    db.close()
+
+    return row
 
 
 # Instantiate the Blockchain
@@ -108,12 +215,8 @@ def configure():
 
 @app.route('/chain', methods=['GET'])
 def get_chain():
-    response = {
-        'chain': blockchain.chain,
-        'length': len(blockchain.chain)
-    }
 
-    return jsonify(response), 200
+    return jsonify({"message": "SQL next"}), 200
 
 
 
