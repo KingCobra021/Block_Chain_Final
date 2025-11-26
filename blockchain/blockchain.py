@@ -1,7 +1,6 @@
-
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, session, redirect
 from time import time
-from flask_cors import CORS
+#from flask_cors import CORS
 from collections import OrderedDict
 import binascii
 import Crypto
@@ -49,7 +48,7 @@ class Blockchain:
             'Authority_id': Authority_id,
             'previous_hash': previous_hash,
             'Validator_sig': Validator_sig,
-            'Record_changes': Record_change
+            'Record_change': Record_change
         }
 
         block_hash = self.hash(block)
@@ -200,25 +199,82 @@ blockchain = Blockchain()
 
 # Instantiate the Node
 app = Flask(__name__)
-CORS(app)
+app.secret_key = "Very_Secret_Demo_Key"
+#CORS(app)
 
-
-@app.route('/')
+@app.route("/") # adds the root page/home page route to flask
+# everything under the route belongs to the route until new route is added
 def index():
-    return render_template('./index.html')
+    # returns the rendered page
+    return render_template("./index.html")
 
+@app.route("/home")
 
-@app.route('/configure')
-def configure():
-    return render_template('./configure.html')
+def Home():
+    return index()
 
+@app.route('/register', methods = ['GET','POST'])
+def register():
 
-@app.route('/chain', methods=['GET'])
-def get_chain():
+    if request.method == 'GET':
+        return render_template('register.html')
 
-    return jsonify({"message": "SQL next"}), 200
+    req = request.get_json()
+    username = req.get('username')
+    password = req.get('password')
+    role = req.get('role')
 
+    if not username or not password or not role:
+        return jsonify({"error": "Required fields can't be empty !"}), 400
 
+    try:
+        CreateUser(username, password, role)
+        return jsonify({"message": "User created successfully"}), 201
+    except sqlite3.IntegrityError:
+        return jsonify({"error": "User with this information already exists"}), 400
+
+@app.route('/login', methods=['GET','POST'])
+def login():
+
+    if request.method == 'GET':
+        return render_template("login.html")
+
+    username = request.form.get('username')
+    password = request.form.get('password')
+
+    credentials = Login(username, password)
+
+    if not credentials:
+        return jsonify({"error": "Invalid username or password"}), 401
+
+    user_id, role, public_key, private_key = credentials
+
+    session["user_id"] = user_id
+    session["role"] = role
+
+    return jsonify({'status':"success",'redirect':"/dashboard"}), 200
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect("/login")
+
+@app.route('/user/dashboard')
+
+def dashboard():
+
+    if 'user_id' in session:
+        return redirect("/login")
+    role = session["role"]
+
+    if role == "doctor":
+        return render_template("doctor_dashboard.html")
+    elif role == "patient":
+        return render_template("patient_dashboard.html")
+    elif role == "authority":
+        return render_template("authority_dashboard.html")
+    else:
+        return render_template("error.html",massage = "invalid role"), 403
 
 if __name__ == '__main__':
     from argparse import ArgumentParser
