@@ -1,17 +1,11 @@
 from flask import Flask, request, jsonify, render_template, session, redirect
-from time import time
-#from flask_cors import CORS
-from collections import OrderedDict
 import binascii
-import Crypto
 from Crypto.PublicKey import RSA
 from Crypto.Signature import PKCS1_v1_5
 from Crypto.Hash import SHA256
-from uuid import uuid4
 import json
 import hashlib
 import sqlite3
-from sqlite3 import Error
 from datetime import datetime
 
 
@@ -157,12 +151,19 @@ def NewRecord(patient_id, doctor_id, action):
     db.commit()
     db.close()
 
-def GetPending(patient_id):
+def GetPending(user_id, role):
 
     db = sqlite3.connect(db_path)
     dbfunc = db.cursor()
 
-    dbfunc.execute("SELECT * FROM TempRecordChanges WHERE patient_id=? AND status = 'Pending Approval'",(patient_id,))
+    if role == "doctor" or role == "patient":
+        sql = f"SELECT * FROM TempRecordChanges WHERE {role}_id=? AND status = 'Pending Approval'"
+        dbfunc.execute(sql,(user_id,))
+    elif role == "authority":
+        dbfunc.execute("SELECT * FROM TempRecordChanges WHERE status='Pending Approval'")
+    else:
+        db.close()
+        return []
 
     row = dbfunc.fetchall()
     db.close()
@@ -193,6 +194,32 @@ def GetChain(patient_id):
 
     return row
 
+def GetRecord(record_id):
+
+    db = sqlite3.connect(db_path)
+    dbfunc = db.cursor()
+
+    dbfunc.execute("SELECT * FROM TempRecordChanges WHERE id=?",(record_id,))
+
+    row = dbfunc.fetchone()
+    db.close()
+
+    return row
+
+def LastHash(patient_id):
+    db = sqlite3.connect(db_path)
+    dbfunc = db.cursor()
+
+    dbfunc.execute("SELECT block_hash FROM Blocks WHERE patient_id=? ORDER BY id DESC LIMIT 1",(patient_id,))
+
+    row = dbfunc.fetchone()
+    db.close()
+
+    if row is None:
+        return "GENESIS"
+
+    return row[0]
+
 
 # Initantiate the Blockchain
 blockchain = Blockchain()
@@ -200,8 +227,6 @@ blockchain = Blockchain()
 # Instantiate the Node
 app = Flask(__name__)
 app.secret_key = "Very_Secret_Demo_Key"
-#CORS(app)
-
 @app.route("/") # adds the root page/home page route to flask
 # everything under the route belongs to the route until new route is added
 def index():
@@ -252,7 +277,7 @@ def login():
     session["user_id"] = user_id
     session["role"] = role
 
-    return jsonify({'status':"success",'redirect':"/dashboard"}), 200
+    return jsonify({'status':"success",'redirect':"/user/dashboard"}), 200
 
 @app.route('/logout')
 def logout():
@@ -263,7 +288,7 @@ def logout():
 
 def dashboard():
 
-    if 'user_id' in session:
+    if 'user_id' not in session:
         return redirect("/login")
     role = session["role"]
 
@@ -275,6 +300,57 @@ def dashboard():
         return render_template("authority_dashboard.html")
     else:
         return render_template("error.html",massage = "invalid role"), 403
+
+@app.route('/user/generate_key', methods = ['POST'])
+def generate_key():
+
+    if 'user_id' not in session:
+        return jsonify({"error": "Not Logged in!"}), 403
+    user_id = session["user_id"]
+
+    private_key,public_key = blockchain.GenerateKeys(user_id)
+
+
+    return jsonify({"message":"Key pair generated successfully.","public_key":public_key}), 200
+
+
+@app.route('/doctor/new_record', methods = ['GET', 'POST'])
+def new_record():
+    if "user_id" not in session:
+        return redirect("/login")
+
+    if session["role"] != "doctor":
+        return jsonify({"error": "You are not authorized to perform this action!"}), 403
+
+    if request.method == 'GET':
+        return render_template("record_change.html")
+
+    patient_id = request.form.get("patient_id")
+    action = request.form.get("action")
+    doctor_id = session["user_id"]
+
+    if not patient_id or not action:
+        return jsonify({"error": "Required fields can't be empty !"}), 400
+
+    NewRecord(patient_id, doctor_id, action)
+
+    return jsonify({"message": "New record pending approval."}), 200
+
+
+@app.route('/records/pending', methods=['GET'])
+def pending_records():
+
+    if "user_id" not in session:
+        return redirect("/login")
+
+    user_id = session["user_id"]
+    role = session["role"]
+
+    records = GetPending(user_id, role)
+
+    return render_template("pending_records.html", records=records)
+
+
 
 if __name__ == '__main__':
     from argparse import ArgumentParser
