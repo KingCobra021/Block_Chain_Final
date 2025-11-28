@@ -352,6 +352,35 @@ def SignRecord(record_id, user_id, role):
         return False, "Invalid role for signing."
 
 
+def GetUserId(username):
+
+    db = sqlite3.connect(db_path)
+    dbfunc = db.cursor()
+
+    dbfunc.execute("SELECT id FROM users WHERE username = ? AND role = 'patient' ",(username,))
+
+    row = dbfunc.fetchone()
+    db.close()
+
+    if row is None:
+        return None
+
+    id = row[0]
+
+    return id
+
+def GetUsername(user_id):
+    db = sqlite3.connect(db_path)
+    dbfunc = db.cursor()
+    dbfunc.execute("SELECT username FROM Users WHERE id = ?", (user_id,))
+    row = dbfunc.fetchone()
+    db.close()
+    if not row:
+        return None
+    username = row[0]
+    return username
+
+
 # Initantiate the Blockchain
 blockchain = Blockchain()
 
@@ -429,8 +458,7 @@ def dashboard():
         return render_template("patient_dashboard.html")
     elif role == "authority":
         return render_template("authority_dashboard.html")
-    else:
-        return render_template("error.html",massage = "invalid role"), 403
+
 
 @app.route('/user/generate_key', methods = ['POST'])
 def generate_key():
@@ -456,12 +484,17 @@ def new_record():
     if request.method == 'GET':
         return render_template("record_change.html")
 
-    patient_id = request.form.get("patient_id")
+    patient_username = request.form.get("patient_username")
     action = request.form.get("action")
     doctor_id = session["user_id"]
 
-    if not patient_id or not action:
+    if not patient_username or not action:
         return jsonify({"error": "Required fields can't be empty !"}), 400
+
+    patient_id = GetUserId(patient_username)
+
+    if patient_id is None:
+        return jsonify({"error": "Patient not found."}), 404
 
     NewRecord(patient_id, doctor_id, action)
 
@@ -528,6 +561,64 @@ def view_chain(patient_id):
     chain = GetChain(patient_id)
 
     return jsonify({"patient_id": patient_id,"chain": chain}), 200
+@app.route('/user/id', methods=['GET'])
+def get_id(username):
+
+    if not username:
+        return redirect("User Doesn't exist.")
+
+    user_id = GetUserId(username)
+
+    if user_id is None:
+        return jsonify({"error": "User doesn't exist."}), 404
+
+    return jsonify({"user_id": user_id}), 200
+
+
+@app.route('/records/history', methods=['GET'])
+def records_history():
+
+    if "user_id" not in session:
+        return jsonify({"error": "Not logged in!"}), 403
+
+    role = session["role"]
+    user_id = session["user_id"]
+
+    if role == "patient":
+        patient_id = user_id
+
+    elif role == "doctor":
+        patient_username = request.args.get("patient_username")
+        if not patient_username:
+            return jsonify({"error": "patient_username is required for doctors."}), 400
+
+        patient_id = GetUserId(patient_username)
+        if patient_id is None:
+            return jsonify({"error": "Patient username not found or not a patient."}), 404
+
+    else:
+        return jsonify({"error": "This role cannot view history."}), 403
+
+    rows = GetChain(patient_id)
+
+    history = []
+    for row in rows:
+
+        history.append({
+            "id": row[0],
+            "patient_id": row[1],
+            "doctor_id": row[2],
+            "authority_id": row[3],
+            "timestamp": row[4],
+            "record_change": json.loads(row[5]) if row[5] else None,
+            "previous_hash": row[6],
+            "validator_signature": row[7],
+            "block_hash": row[8],
+        })
+
+    patient_username = GetUsername(patient_id)
+
+    return jsonify({"patient_id": patient_id,"patient_username": patient_username,"history": history}), 200
 
 
 if __name__ == '__main__':
