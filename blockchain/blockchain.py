@@ -605,7 +605,7 @@ def records_history():
     for row in rows:
 
         history.append({
-            "id": row[0],
+            "block_id": row[0],
             "patient_id": row[1],
             "doctor_id": row[2],
             "authority_id": row[3],
