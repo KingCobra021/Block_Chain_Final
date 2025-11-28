@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Patient Dashboard - Medical Record PoA</title>
+
+    <link rel="stylesheet" href="/static/vendor/bootstrap/css/bootstrap.min.css">
+    <link rel="stylesheet" href="/static/vendor/DataTables/css/datatables.min.css">
+    <link rel="stylesheet" href="/static/vendor/font-awesome/font-awesome.min.css">
+    <link rel="stylesheet" href="/static/css/custom.css">
+</head>
+<body>
+
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top">
+    <div class="container">
+        <a href="/" class="navbar-brand">Medical Record PoA</a>
+        <div class="collapse navbar-collapse">
+            <ul class="navbar-nav ml-auto">
+                <li class="nav-item active">
+                    <a href="/user/dashboard" class="nav-link">Dashboard</a>
+                </li>
+                <li class="nav-item">
+                    <a href="/records/pending" class="nav-link">Pending Records</a>
+                </li>
+                <li class="nav-item">
+                    <a href="/logout" class="nav-link">Logout</a>
+                </li>
+            </ul>
+        </div>
+    </div>
+</nav>
+
+<div class="container" style="margin-top: 90px;">
+    <div class="row">
+        <div class="col-lg-10 offset-lg-1">
+            <div class="card">
+                <div class="card-body text-center">
+                    <h3 class="card-title">Patient Dashboard</h3>
+                    <p class="card-text">
+                        Generate your key pair, sign pending record changes, and view your approved record history.
+                    </p>
+
+                    <!-- Key pair area (unchanged) -->
+                    <div id="key_alert" class="alert d-none" role="alert"></div>
+
+                    <button id="generate_key_btn" class="btn btn-primary m-2">
+                        Generate Key Pair
+                    </button>
+
+                    <a href="/records/pending" class="btn btn-info m-2">
+                        View Pending Records
+                    </a>
+
+                    <div class="mt-4">
+                        <label for="public_key_box">Your public key (after generation):</label>
+                        <textarea id="public_key_box" class="form-control" rows="4" readonly></textarea>
+                    </div>
+
+                    <hr class="my-4">
+
+                    <!-- NEW: History viewer -->
+                    <h4 class="mt-3 mb-3">My Record History</h4>
+
+                    <div id="history_alert" class="alert d-none" role="alert"></div>
+
+                    <button id="load_history_btn" class="btn btn-outline-secondary mb-3">
+                        Load My History
+                    </button>
+
+                    <div class="table-responsive">
+                        <table id="history_table" class="table table-striped table-bordered">
+                            <thead class="thead-dark">
+                                <tr>
+                                    <th>Block ID</th>
+                                    <th>Timestamp</th>
+                                    <th>Doctor ID</th>
+                                    <th>Authority ID</th>
+                                    <th>Action</th>
+                                    <th>Prev Hash</th>
+                                    <th>Block Hash</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <!-- Filled by jQuery -->
+                            </tbody>
+                        </table>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="/static/vendor/jquery/jquery.min.js"></script>
+<script src="/static/vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
+<script>
+    $(function () {
+        // existing: generate key
+        $('#generate_key_btn').click(function () {
+            $.ajax({
+                url: '/user/generate_key',
+                type: 'POST',
+                success: function (resp) {
+                    $('#public_key_box').val(resp.public_key || '');
+                    $('#key_alert')
+                        .removeClass('d-none alert-danger')
+                        .addClass('alert-success')
+                        .text(resp.message || 'Key pair generated successfully.');
+                },
+                error: function (xhr) {
+                    let msg = 'Failed to generate key pair.';
+                    if (xhr.responseJSON && xhr.responseJSON.error) {
+                        msg = xhr.responseJSON.error;
+                    }
+                    $('#key_alert')
+                        .removeClass('d-none alert-success')
+                        .addClass('alert-danger')
+                        .text(msg);
+                }
+            });
+        });
+
+        // NEW: load own history
+        $('#load_history_btn').click(function () {
+            $.ajax({
+                url: '/records/history',
+                type: 'GET',
+                success: function (resp) {
+                    const tbody = $('#history_table tbody');
+                    tbody.empty();
+
+                    const history = resp.history || [];
+
+                    history.forEach(function (b) {
+                        const actionText = b.record_change && b.record_change.action
+                            ? b.record_change.action
+                            : '';
+
+                        const shortPrev = b.previous_hash
+                            ? b.previous_hash.substring(0, 12) + '...'
+                            : '';
+                        const shortHash = b.block_hash
+                            ? b.block_hash.substring(0, 12) + '...'
+                            : '';
+
+                        const row = `
+                            <tr>
+                                <td>${b.block_id}</td>
+                                <td>${b.timestamp}</td>
+                                <td>${b.doctor_id}</td>
+                                <td>${b.authority_id}</td>
+                                <td>${actionText}</td>
+                                <td>${shortPrev}</td>
+                                <td>${shortHash}</td>
+                            </tr>
+                        `;
+                        tbody.append(row);
+                    });
+
+                    $('#history_alert')
+                        .removeClass('d-none alert-danger')
+                        .addClass('alert-success')
+                        .text('Loaded history for ' + resp.patient_username + '.');
+                },
+                error: function (xhr) {
+                    let msg = 'Failed to load history.';
+                    if (xhr.responseJSON && xhr.responseJSON.error) {
+                        msg = xhr.responseJSON.error;
+                    }
+                    $('#history_alert')
+                        .removeClass('d-none alert-success')
+                        .addClass('alert-danger')
+                        .text(msg);
+                }
+            });
+        });
+    });
+</script>
+
+</body>
+</html>
