@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Pending Records - Medical Record PoA</title>
+
+    <link rel="stylesheet" href="/static/vendor/bootstrap/css/bootstrap.min.css">
+    <link rel="stylesheet" href="/static/vendor/DataTables/css/datatables.min.css">
+    <link rel="stylesheet" href="/static/vendor/font-awesome/font-awesome.min.css">
+    <link rel="stylesheet" href="/static/css/custom.css">
+</head>
+<body>
+
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top">
+    <div class="container">
+        <a href="/" class="navbar-brand">Medical Record PoA</a>
+        <div class="collapse navbar-collapse">
+            <ul class="navbar-nav ml-auto">
+                <li class="nav-item">
+                    <a href="/user/dashboard" class="nav-link">Dashboard</a>
+                </li>
+                <li class="nav-item active">
+                    <a href="/records/pending" class="nav-link">Pending Records</a>
+                </li>
+                <li class="nav-item">
+                    <a href="/logout" class="nav-link">Logout</a>
+                </li>
+            </ul>
+        </div>
+    </div>
+</nav>
+
+<div class="container" style="margin-top: 90px;">
+    <div class="row">
+        <div class="col-lg-12">
+            <h3 class="mb-3">
+                Pending Records
+                {% if session['role'] == 'doctor' %}(Doctor view){% endif %}
+                {% if session['role'] == 'patient' %}(Patient view){% endif %}
+                {% if session['role'] == 'authority' %}(Authority view){% endif %}
+            </h3>
+
+            <div id="pending_alert" class="alert d-none" role="alert"></div>
+
+            <table id="records_table" class="table table-bordered table-striped">
+                <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Record ID</th>
+                    <th>Patient ID</th>
+                    <th>Doctor ID</th>
+                    <th>Action</th>
+                    <th>Timestamp</th>
+                    <th>Status</th>
+                    <th>Doctor Signed?</th>
+                    <th>Patient Signed?</th>
+                    <th>Authority ID</th>
+                    <th>Action</th>
+                </tr>
+                </thead>
+                <tbody>
+                {% for r in records %}
+                    {# r = (id, patient_id, doctor_id, action, timestamp, doctor_sig, patient_sig, auth_id, auth_sig, status) #}
+                    <tr data-record-id="{{ r[0] }}">
+                        <td>{{ loop.index }}</td>
+                        <td>{{ r[0] }}</td>
+                        <td>{{ r[1] }}</td>
+                        <td>{{ r[2] }}</td>
+                        <td>{{ r[3] }}</td>
+                        <td>{{ r[4] }}</td>
+                        <td>{{ r[9] }}</td>
+                        <td>{{ 'Yes' if r[5] else 'No' }}</td>
+                        <td>{{ 'Yes' if r[6] else 'No' }}</td>
+                        <td>{{ r[7] if r[7] else '-' }}</td>
+                        <td>
+                            {% if session['role'] == 'doctor' or session['role'] == 'patient' %}
+                                <button class="btn btn-sm btn-primary sign-btn">Sign</button>
+                            {% elif session['role'] == 'authority' %}
+                                <button class="btn btn-sm btn-success approve-btn">Approve</button>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+
+        </div>
+    </div>
+</div>
+
+<script src="/static/vendor/jquery/jquery.min.js"></script>
+<script src="/static/vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
+<script src="/static/vendor/DataTables/js/datatables.min.js"></script>
+<script src="/static/vendor/DataTables/js/ellipsis.js"></script>
+<script>
+    $(function () {
+        $('#records_table').dataTable();
+
+        function showAlert(type, msg) {
+            $('#pending_alert')
+                .removeClass('d-none alert-success alert-danger')
+                .addClass(type === 'success' ? 'alert-success' : 'alert-danger')
+                .text(msg);
+        }
+
+        $('.sign-btn').click(function () {
+            const row = $(this).closest('tr');
+            const recordId = row.data('record-id');
+
+            $.ajax({
+                url: '/records/sign',
+                type: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({record_id: recordId}),
+                success: function (resp) {
+                    showAlert('success', resp.message || 'Signed successfully.');
+                    setTimeout(function () { window.location.reload(); }, 600);
+                },
+                error: function (xhr) {
+                    let msg = 'Failed to sign record.';
+                    if (xhr.responseJSON && xhr.responseJSON.error) {
+                        msg = xhr.responseJSON.error;
+                    }
+                    showAlert('error', msg);
+                }
+            });
+        });
+
+        $('.approve-btn').click(function () {
+            const row = $(this).closest('tr');
+            const recordId = row.data('record-id');
+
+            $.ajax({
+                url: '/records/approve',
+                type: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({record_id: recordId}),
+                success: function (resp) {
+                    showAlert('success', resp.message || 'Record approved.');
+                    setTimeout(function () { window.location.reload(); }, 600);
+                },
+                error: function (xhr) {
+                    let msg = 'Failed to approve record.';
+                    if (xhr.responseJSON && xhr.responseJSON.error) {
+                        msg = xhr.responseJSON.error;
+                    }
+                    showAlert('error', msg);
+                }
+            });
+        });
+    });
+</script>
+
+</body>
+</html>

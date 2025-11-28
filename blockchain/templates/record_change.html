@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>New Record Change - Doctor</title>
+
+    <link rel="stylesheet" href="/static/vendor/bootstrap/css/bootstrap.min.css">
+    <link rel="stylesheet" href="/static/vendor/DataTables/css/datatables.min.css">
+    <link rel="stylesheet" href="/static/vendor/font-awesome/font-awesome.min.css">
+    <link rel="stylesheet" href="/static/css/custom.css">
+</head>
+<body>
+
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top">
+    <div class="container">
+        <a href="/" class="navbar-brand">Medical Record PoA</a>
+        <div class="collapse navbar-collapse">
+            <ul class="navbar-nav ml-auto">
+                <li class="nav-item">
+                    <a href="/user/dashboard" class="nav-link">Dashboard</a>
+                </li>
+                <li class="nav-item active">
+                    <a href="/doctor/new_record" class="nav-link">New Record</a>
+                </li>
+                <li class="nav-item">
+                    <a href="/logout" class="nav-link">Logout</a>
+                </li>
+            </ul>
+        </div>
+    </div>
+</nav>
+
+<div class="container" style="margin-top: 90px;">
+    <div class="row">
+        <div class="col-lg-8 offset-lg-2">
+            <div class="card">
+                <div class="card-body">
+                    <h4 class="card-title text-center">Create a New Record Change</h4>
+
+                    <div id="rec_alert" class="alert d-none" role="alert"></div>
+
+                    <form id="record_form">
+                        <div class="form-group">
+                            <label for="patient_username">Patient Username:</label>
+                            <input
+                                class="form-control"
+                                type="text"
+                                id="patient_username"
+                                name="patient_username"
+                                required
+                                placeholder="Enter patient's username">
+                        </div>
+
+                        <div class="form-group">
+                            <label for="action">Change Description:</label>
+                            <textarea class="form-control" id="action" name="action" rows="4" required></textarea>
+                        </div>
+
+                        <div class="text-center">
+                            <button type="submit" class="btn btn-primary btn-lg">Submit Record Change</button>
+                            <a href="/user/dashboard" class="btn btn-secondary btn-lg ml-2">Cancel</a>
+                        </div>
+                    </form>
+
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="/static/vendor/jquery/jquery.min.js"></script>
+<script src="/static/vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
+<script>
+    $(function () {
+        $('#record_form').on('submit', function (e) {
+            e.preventDefault();
+
+            $.ajax({
+                url: '/doctor/new_record',
+                type: 'POST',
+                data: $('#record_form').serialize(),
+                success: function (resp) {
+                    $('#rec_alert')
+                        .removeClass('d-none alert-danger')
+                        .addClass('alert-success')
+                        .text(resp.message || 'New record pending approval.');
+
+                    // Clear fields after success
+                    $('#patient_username').val('');
+                    $('#action').val('');
+                },
+                error: function (xhr) {
+                    let msg = 'Failed to create record.';
+                    if (xhr.responseJSON && xhr.responseJSON.error) {
+                        msg = xhr.responseJSON.error;
+                    }
+                    $('#rec_alert')
+                        .removeClass('d-none alert-success')
+                        .addClass('alert-danger')
+                        .text(msg);
+                }
+            });
+        });
+    });
+</script>
+
+</body>
+</html>
