@@ -221,6 +221,137 @@ def LastHash(patient_id):
     return row[0]
 
 
+def WriteBlock(block):
+
+    db = sqlite3.connect(db_path)
+    dbfunc = db.cursor()
+
+    dbfunc.execute("""INSERT INTO Blocks (patient_id,doctor_id,authority_id,timestamp,record_change,previous_hash,validator_signature,block_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            block["Patient_id"],
+            block["Doctor_id"],
+            block["Authority_id"],
+            block["timestamp"],
+            json.dumps(block["Record_change"]),
+            block["previous_hash"],
+            block["Validator_sig"],
+            block["block_hash"],
+        )
+    )
+
+    db.commit()
+    db.close()
+
+def PoA(record_id, authority_id):
+
+    record = GetRecord(record_id)
+
+    if not record:
+        return False, "Record doesn't exist!"
+
+    (id,patient_id,doctor_id,action,timestamp,doctor_sig,patient_sig,auth_id,authority_sig,status) = record
+
+
+    keys = GetUserKey(authority_id)
+
+    if not keys:
+        return False, "Athority  keys doesn't exist!."
+
+    auth_pub, auth_priv = keys
+
+    if status != "Pending Approval":
+        return False, "Record not pending."
+
+    if not doctor_sig:
+        return False, "Doctor has not signed this record."
+
+    if not patient_sig:
+        return False, "Patient has not signed this record."
+
+    if not auth_priv:
+        return False, "Authority private key doesn't exist!"
+
+    change = {
+        "record_id": record_id,
+        "patient_id": patient_id,
+        "doctor_id": doctor_id,
+        "action": action,
+        "timestamp": timestamp
+    }
+    last_hash = LastHash(patient_id)
+
+    validator_sig = blockchain.Sign(auth_priv, change)
+
+    block = blockchain.create_block(Patient_id=patient_id,Doctor_id=doctor_id,Authority_id=authority_id,previous_hash=last_hash,Validator_sig=validator_sig,Record_change=change)
+
+    WriteBlock(block)
+
+    UpdateRecord(record_id, "status", "Approved")
+    UpdateRecord(record_id, "authority_id", authority_id)
+    UpdateRecord(record_id, "authority_signature", validator_sig)
+
+    return True, "Record Approved!"
+
+
+
+def SignRecord(record_id, user_id, role):
+
+
+    record = GetRecord(record_id)
+
+    if not record:
+        return False, "Record doesn't exist!"
+
+    (id,patient_id,doctor_id,action,timestamp,doctor_sig,patient_sig,auth_id,auth_sig,status) = record
+
+    if status != "Pending Approval":
+        return False, "Record not pending."
+
+    change = {
+        "record_id": record_id,
+        "patient_id": patient_id,
+        "doctor_id": doctor_id,
+        "action": action,
+        "timestamp": timestamp
+    }
+
+    keys = GetUserKey(user_id)
+
+    if not keys:
+        return False, "User has no keys. Generate a key pair first."
+
+    pub_key, priv_key = keys
+
+    if not priv_key:
+        return False, "User private key is missing."
+
+    signature = blockchain.Sign(priv_key, change)
+
+    if role == "doctor":
+        if doctor_id != user_id:
+            return False, "Unauthorized action!"
+
+        if doctor_sig:
+            return False, "Already signed."
+
+        UpdateRecord(record_id, "doctor_signature", signature)
+
+        return True, "Doctor signature added."
+
+    elif role == "patient":
+        if patient_id != user_id:
+            return False, "Unauthorized action!"
+
+        if patient_sig:
+            return False, "Already signed."
+
+        UpdateRecord(record_id, "patient_signature", signature)
+        return True, "Patient signature added."
+
+    else:
+        return False, "Invalid role for signing."
+
+
 # Initantiate the Blockchain
 blockchain = Blockchain()
 
@@ -349,7 +480,54 @@ def pending_records():
     records = GetPending(user_id, role)
 
     return render_template("pending_records.html", records=records)
+@app.route('/records/sign', methods=['POST'])
+def sign_record():
 
+    if "user_id" not in session:
+        return jsonify({"error": "Not logged in!"}), 403
+
+    user_id = session["user_id"]
+    role = session["role"]
+
+    row = request.get_json()
+    record_id = row.get("record_id")
+
+    if not record_id:
+        return jsonify({"error": "Record not found!"}), 400
+
+    success, reason = SignRecord(int(record_id), user_id, role)
+
+    if not success:
+        return jsonify({"error": reason}), 400
+
+    return jsonify({"message": reason}), 200
+
+@app.route('/records/approve', methods=['POST'])
+def approve_record():
+    if "user_id" not in session or session.get("role") != "authority":
+        return jsonify({"error": "Not authorized"}), 403
+
+    data = request.get_json()
+    record_id = data.get("record_id")
+
+    if not record_id:
+        return jsonify({"error": "record_id is required"}), 400
+
+    success, reason = PoA(int(record_id), session["user_id"])
+
+    if not success:
+        return jsonify({"error": reason}), 400
+
+    return jsonify({"message": reason}), 200
+@app.route('/chain/<int:patient_id>', methods=['GET'])
+def view_chain(patient_id):
+
+    if "user_id" not in session:
+        return redirect("/login")
+
+    chain = GetChain(patient_id)
+
+    return jsonify({"patient_id": patient_id,"chain": chain}), 200
 
 
 if __name__ == '__main__':
